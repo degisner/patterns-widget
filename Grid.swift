@@ -4,24 +4,21 @@ import SwiftData
 import AppIntents
 
 struct Provider: AppIntentTimelineProvider {
-    @MainActor
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), rows: [])
+        SimpleEntry(date: Date())
     }
 
-    @MainActor
     func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> SimpleEntry {
-        SimpleEntry(date: Date(), rows: getRows())
+        SimpleEntry(date: Date())
     }
     
-    @MainActor
     func timeline(for configuration: ConfigurationAppIntent, in context: Context) async -> Timeline<SimpleEntry> {
         var entries: [SimpleEntry] = []
         var date = Date.now
         
         for i in 0 ..< 5 {
             date = date.byAdding(.hour, value: i)
-            let entry = SimpleEntry(date: date, rows: getRows())
+            let entry = SimpleEntry(date: date)
             entries.append(entry)
         }
         
@@ -29,25 +26,20 @@ struct Provider: AppIntentTimelineProvider {
         
         return timeline
     }
-    
-    @MainActor
-    func getRows() -> [Row] {
-        GridWidgetViewModel.shared.getRows()
-    }
 }
 
 struct SimpleEntry: TimelineEntry {
     let date: Date
-    let rows: [Row]
 }
 
 struct GridEntryView : View {
     @Environment(\.widgetFamily) private var widgetFamily
+    @Query(sort: \Habit.order) private var habits: [Habit]
     
     var entry: Provider.Entry
 
     var body: some View {
-        if entry.rows.isEmpty {
+        if habits.isEmpty {
             emptyView
         } else {
             listView
@@ -72,134 +64,15 @@ struct GridEntryView : View {
     
     var listView: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
-                ForEach(0 ..< rowsNumber(of: proxy.size.width), id: \.self) { index in
-                    if entry.rows.indices.contains(index) {
-                        let row = entry.rows[index]
-                        
-                        if row.id != 0 {
-                            Spacer(minLength: 0)
-                        }
-                        
-                        rowView(row: row, width: proxy.size.width)
-                    } else {
-                        Rectangle().fill(.backgroundWidget)
-                            .frame(height: size(of: proxy.size.width))
-                    }
-                }
-            }
-            .padding(.vertical, padding(of: proxy.size.width))
+            HabitsView(habitsNumber: habitsNumber(of: proxy.size.width), width: proxy.size.width)
         }
     }
     
-    func rowView(row: Row, width: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Text(row.icon)
-                .font(font(of: width))
-                .fixedSize(horizontal: true, vertical: false)
-            
-            Spacer(minLength: 0)
-            
-            ForEach(firstItemIndex(of: width) ..< 11, id: \.self) { index in
-                if row.items.indices.contains(index) {
-                    let item = row.items[index]
-                    itemView(row: row, item: item, width: width)
-                }
-            }
-        }
-        .padding(.horizontal, padding(of: width))
-    }
-    
-    func itemView(row: Row, item: Item, width: CGFloat) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .foregroundStyle(row.color)
-                .opacity(item.isLogged ? 0.3 : 0.2)
-            
-            Button(intent: LogIntent(rowID: row.id, itemID: item.id)) {
-                Rectangle()
-                    .foregroundStyle(.backgroundWidget)
-            }
-            .buttonStyle(.borderless)
-            
-            RoundedRectangle(cornerRadius: item.isLogged ? 4 : 7, style: .continuous)
-                .foregroundStyle(row.color)
-                .frame(width: 14, height: 14)
-                .scaleEffect(item.isLogged ? 1 : 0.6)
-                .opacity(item.isLogged ? 1 : 0.3)
-        }
-        .frame(width: size(of: width), height: size(of: width))
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: item.isLogged)
-    }
-    
-    // Small widget width:
-    // iPhone Mini's width is 155
-    // iPhone 15 Pro's width is 158
-    // iPhone 15 Pro Max's width is 170
-    //
-    // Medium & Large widget width:
-    // iPhone Mini's width is 329
-    // iPhone 15 Pro's width is 338
-    // iPhone 15 Pro Max's width is 364
-    func size(of width: CGFloat) -> CGFloat {
-        switch widgetFamily {
-        case .systemSmall:
-            switch width {
-            case ..<156: return 24
-            case ..<160: return 26
-            default:     return 28
-            }
-        default:
-            switch width {
-            case ..<335: return 24.5
-            case ..<350: return 25.75
-            default:     return 27.6
-            }
-        }
-    }
-    
-    func rowsNumber(of width: CGFloat) -> Int {
+    func habitsNumber(of width: CGFloat) -> Int {
         switch widgetFamily {
         case .systemLarge:  return width < 335 ? 11 : 12
         case .systemMedium: return 5
         default:            return 5
-        }
-    }
-    
-    func firstItemIndex(of width: CGFloat) -> Int {
-        switch widgetFamily {
-        case .systemSmall: return 7
-        default:           return width < 335 ? 1 : 0
-        }
-    }
-    
-    func padding(of width: CGFloat) -> CGFloat {
-        switch widgetFamily {
-        case .systemSmall:
-            switch width {
-            case ..<156: return 10
-            case ..<160: return 14
-            default:     return 15
-            }
-        case .systemMedium:
-            switch width {
-            case ..<335: return 10
-            case ..<350: return 14
-            default:     return 16
-            }
-        default:
-            switch width {
-            case ..<335: return 11
-            case ..<350: return 14
-            default:     return 16
-            }
-        }
-    }
-    
-    func font(of width: CGFloat) -> Font {
-        switch widgetFamily {
-        case .systemSmall: return width < 156 ? .footnote : .subheadline
-        default:           return width < 335 ? .footnote : .subheadline
         }
     }
 }
@@ -210,19 +83,39 @@ struct LogIntent: AppIntent {
 
     static var title: LocalizedStringResource = "Log a day"
 
-    @Parameter(title: "row id")
-    var rowID: Int
+    @Parameter(title: "habit id")
+    var habitID: Int
     
-    @Parameter(title: "item id")
-    var itemID: Int
+    @Parameter(title: "log id")
+    var logID: Int
 
-    init(rowID: Int, itemID: Int) {
-        self.rowID = rowID
-        self.itemID = itemID
+    init(habitID: Int, logID: Int) {
+        self.habitID = habitID
+        self.logID = logID
     }
 
+    @MainActor
     func perform() async throws -> some IntentResult {
-        await GridWidgetViewModel.shared.update(rowID: rowID, itemID: itemID)
+        do {
+            let descriptor = FetchDescriptor<Log>()
+            let logs = try modelContainer.mainContext.fetch(descriptor)
+            let date = Date().reset(after: .day).byAdding(.day, value: logID)
+            
+            if let log = logs.first(where: { $0.habit?.order == habitID && $0.date.isDate(date) }) {
+                modelContainer.mainContext.delete(log)
+            } else {
+                let log = Log(date: date)
+                
+                let habits = try modelContainer.mainContext.fetch(FetchDescriptor<Habit>())
+                if let habit = habits.first(where: { $0.order == habitID }) {
+                    log.habit = habit
+                }
+                
+                modelContainer.mainContext.insert(log)
+            }
+        } catch {
+            print("Error updating logs from widget. \(error.localizedDescription)")
+        }
 
         return .result()
     }
@@ -235,6 +128,7 @@ struct Grid: Widget {
         AppIntentConfiguration(kind: kind, intent: ConfigurationAppIntent.self, provider: Provider()) { entry in
             GridEntryView(entry: entry)
                 .containerBackground(.backgroundWidget, for: .widget)
+                .modelContainer(modelContainer)
         }
         .contentMarginsDisabled()
         .configurationDisplayName("Habits Grid")
@@ -246,5 +140,5 @@ struct Grid: Widget {
 #Preview(as: .systemSmall) {
     Grid()
 } timeline: {
-    SimpleEntry(date: .now, rows: GridWidgetViewModel.shared.getRows())
+    SimpleEntry(date: .now)
 }
